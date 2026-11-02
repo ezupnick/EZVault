@@ -27,8 +27,17 @@ final class VaultStore: ObservableObject {
     func restore() async {
         guard let data = UserDefaults.standard.data(forKey: bookmarkKey) else { return }
         var stale = false
-        guard let url = try? URL(resolvingBookmarkData: data, bookmarkDataIsStale: &stale),
-              url.startAccessingSecurityScopedResource() else { return }
+        guard let url = try? URL(resolvingBookmarkData: data, bookmarkDataIsStale: &stale) else {
+            lastError = "Couldn't find your vault folder. It may have been moved or deleted — please pick it again."
+            return
+        }
+        guard url.startAccessingSecurityScopedResource() else {
+            lastError = "Lost permission to access \(url.lastPathComponent). Please pick the vault folder again."
+            return
+        }
+        if stale, let fresh = try? url.bookmarkData(options: .minimalBookmark) {
+            UserDefaults.standard.set(fresh, forKey: bookmarkKey)
+        }
         vaultURL = url
         vaultName = url.lastPathComponent
         indexedCount = await index.count()
@@ -40,7 +49,9 @@ final class VaultStore: ObservableObject {
             lastError = "Couldn't access that folder."
             return
         }
-        if let data = try? url.bookmarkData() {
+        // Release the previous vault only once the new one is open, so a failed pick keeps the old vault usable.
+        vaultURL?.stopAccessingSecurityScopedResource()
+        if let data = try? url.bookmarkData(options: .minimalBookmark) {
             UserDefaults.standard.set(data, forKey: bookmarkKey)
         }
         vaultURL = url
@@ -58,6 +69,9 @@ final class VaultStore: ObservableObject {
         let idx = index
 
         await Task.detached(priority: .utility) {
+            // Access is reference-counted; hold our own claim for the whole background pass.
+            let accessing = root.startAccessingSecurityScopedResource()
+            defer { if accessing { root.stopAccessingSecurityScopedResource() } }
             await VaultStore.performIndex(root: root, index: idx) { done, total in
                 await MainActor.run { self.progress = total == 0 ? 1 : Double(done) / Double(total) }
             }
