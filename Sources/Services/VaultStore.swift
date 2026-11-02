@@ -172,7 +172,8 @@ final class VaultStore: ObservableObject {
         guard !tokens.isEmpty else {
             return "\"\(raw.replacingOccurrences(of: "\"", with: ""))\""
         }
-        return tokens.map { "\"\($0)\"" }.joined(separator: " ")
+        // OR the tokens for recall; bm25 (title-weighted) ranks the best matches first.
+        return tokens.map { "\"\($0)\"" }.joined(separator: " OR ")
     }
 }
 
@@ -199,8 +200,16 @@ extension VaultStore: ToolRunner {
 
         case "list_notes":
             let folder = input["folder"] as? String
-            let paths = await index.paths(prefix: folder, limit: 200)
-            return paths.isEmpty ? "No notes found." : paths.joined(separator: "\n")
+            let recentFirst = (input["sort"] as? String) != "name"   // default: newest first
+            let limit = max(1, min((input["limit"] as? Int) ?? 300, 1000))
+            let listing = await index.list(prefix: folder, limit: limit, recentFirst: recentFirst)
+            guard !listing.paths.isEmpty else { return "No notes found." }
+            let order = recentFirst ? "newest modified first" : "by name"
+            var header = "\(listing.total) note(s)\(folder.map { " under \"\($0)\"" } ?? ""), \(order):"
+            if listing.paths.count < listing.total {
+                header += " (showing first \(listing.paths.count) — narrow with a folder prefix, or use search_notes)"
+            }
+            return header + "\n" + listing.paths.joined(separator: "\n")
 
         default:
             return "Unknown tool \(name)."

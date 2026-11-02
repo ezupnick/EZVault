@@ -25,7 +25,8 @@ struct VaultAgent {
         When a question could be answered from their notes, use the tools to search and read before \
         answering: start with search_notes to find candidates, then read_note for detail. \
         Cite the note titles you drew from. Be concise. If the vault has nothing relevant, say so \
-        rather than guessing.
+        rather than guessing. To find the newest note (such as the latest daily note), call \
+        list_notes with sort='recent' instead of paging through a long list.
         """
 
     private var toolSpecs: [[String: Any]] {
@@ -42,9 +43,11 @@ struct VaultAgent {
                               "properties": ["path": ["type": "string"]],
                               "required": ["path"]]],
             ["name": "list_notes",
-             "description": "List note paths, optionally filtered by a folder path prefix.",
+             "description": "List note paths, optionally under a folder prefix. Newest-modified first by default (pass sort='name' for alphabetical). Reports the total count and flags when the list is truncated.",
              "input_schema": ["type": "object",
-                              "properties": ["folder": ["type": "string"]],
+                              "properties": ["folder": ["type": "string", "description": "Folder path prefix, e.g. 'Dailies/'."],
+                                             "sort": ["type": "string", "enum": ["recent", "name"], "description": "Order: 'recent' (default) or 'name'."],
+                                             "limit": ["type": "integer", "description": "Max results (default 300, max 1000)."]],
                               "required": []]]
         ]
     }

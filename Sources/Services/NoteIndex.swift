@@ -137,7 +137,7 @@ actor NoteIndex {
             SELECT f.path, f.title, snippet(notes_fts, 1, '', '', '…', 12)
             FROM notes_fts JOIN files f ON f.rowid = notes_fts.rowid
             WHERE notes_fts MATCH ?
-            ORDER BY rank
+            ORDER BY bm25(notes_fts, 10.0, 1.0)
             LIMIT ?;
             """
         guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return [] }
@@ -162,13 +162,19 @@ actor NoteIndex {
         return String(cString: c)
     }
 
-    func paths(prefix: String?, limit: Int) -> [String] {
+    struct Listing { let paths: [String]; let total: Int }
+
+    /// Lists note paths, newest-first by default. Returns the total match count too,
+    /// so callers can tell the model when the list was truncated.
+    func list(prefix: String?, limit: Int, recentFirst: Bool) -> Listing {
+        let total = countFiles(prefix: prefix)
         var stmt: OpaquePointer?
         defer { sqlite3_finalize(stmt) }
+        let order = recentFirst ? "mtime DESC" : "path ASC"
         let sql = prefix == nil
-            ? "SELECT path FROM files ORDER BY path LIMIT ?;"
-            : "SELECT path FROM files WHERE path LIKE ? ORDER BY path LIMIT ?;"
-        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return [] }
+            ? "SELECT path FROM files ORDER BY \(order) LIMIT ?;"
+            : "SELECT path FROM files WHERE path LIKE ? ORDER BY \(order) LIMIT ?;"
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return Listing(paths: [], total: total) }
         if let prefix {
             sqlite3_bind_text(stmt, 1, prefix + "%", -1, SQLITE_TRANSIENT)
             sqlite3_bind_int(stmt, 2, Int32(limit))
@@ -179,6 +185,17 @@ actor NoteIndex {
         while sqlite3_step(stmt) == SQLITE_ROW {
             if let c = sqlite3_column_text(stmt, 0) { out.append(String(cString: c)) }
         }
-        return out
+        return Listing(paths: out, total: total)
+    }
+
+    private func countFiles(prefix: String?) -> Int {
+        var stmt: OpaquePointer?
+        defer { sqlite3_finalize(stmt) }
+        let sql = prefix == nil
+            ? "SELECT count(*) FROM files;"
+            : "SELECT count(*) FROM files WHERE path LIKE ?;"
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return 0 }
+        if let prefix { sqlite3_bind_text(stmt, 1, prefix + "%", -1, SQLITE_TRANSIENT) }
+        return sqlite3_step(stmt) == SQLITE_ROW ? Int(sqlite3_column_int(stmt, 0)) : 0
     }
 }
