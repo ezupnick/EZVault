@@ -1,72 +1,93 @@
-# VaultChat
+# EZVault
 
-A light, native SwiftUI iPhone app that chats with Claude over your Obsidian vault.
+A light, fast, native SwiftUI iPhone app that chats with **Claude** over your **Obsidian**
+vault. Ask questions in natural language and Claude searches, reads, and answers from your
+notes — and can capture new thoughts back into the vault.
 
-**Phase 1:** streaming chat with Claude + API-key settings.
-**Phase 2:** pick your iCloud vault folder, build a local SQLite/FTS5 index, and give
-Claude `search_notes` / `read_note` / `list_notes` tools so it answers from your notes.
+Everything runs on-device except the model call itself: there's no backend to host, and
+your notes never leave your phone except as context in the questions you send to Claude.
 
-Both phases are written. Nothing has been compiled yet — that happens once Xcode is
-installed (see Prerequisites). Expect to fix a few compile errors on the first build;
-the vault layer in particular hasn't run.
+> The app's display name is **EZVault**; the Xcode project/target is still named `VaultChat`.
+
+## Features
+
+- **Chat over your vault.** Claude uses agentic tools to search, read, and list your notes,
+  then answers with the relevant context — streamed token by token.
+- **Hybrid search.** Keyword full-text (SQLite FTS5, title-weighted) fused with **on-device
+  semantic search** (Apple `NLEmbedding` sentence vectors) via reciprocal-rank fusion, so
+  concept and paraphrase queries find the right note even without exact word overlap.
+- **Markdown replies with tappable citations.** Answers render as Markdown; cited notes are
+  tappable links that open the note in an in-app viewer.
+- **Write-back / capture.** Claude can `append_note`, `create_note`, and `edit_note` (place
+  or revise text anywhere via exact-snippet replacement) — e.g. "add this to today's daily."
+  Non-destructive (no overwrite/delete, vault-path validated) and gated by a Settings toggle.
+- **iCloud vault, no setup server.** Pick your vault folder once; a security-scoped bookmark
+  keeps access across launches. The index auto-refreshes when the app returns to the
+  foreground, and offloaded iCloud notes are downloaded on demand.
+- **Model toggle.** Claude Opus (best) or Haiku (fastest). API key stored in the Keychain.
 
 ## Layout
 
 ```
 VaultChat/
-  project.yml                 XcodeGen spec (generates VaultChat.xcodeproj)
+  VaultChat.xcodeproj         Hand-written Xcode project (no generator needed)
+  project.yml                 Legacy XcodeGen spec — reference only, not used by the build
   Sources/
-    VaultChatApp.swift        App entry
+    VaultChatApp.swift        App entry; re-indexes on foreground
     Models/ChatMessage.swift
     Services/
-      AnthropicClient.swift   Streaming Messages API client (plain chat)
-      VaultAgent.swift        Agentic tool loop (search/read/list notes) over the vault
-      VaultStore.swift        Folder bookmark, iCloud sync, indexing, tool execution
-      NoteIndex.swift         SQLite FTS5 full-text index (no external deps)
-      Settings.swift          Model choice + API key (Keychain-backed)
+      AnthropicClient.swift   Streaming Messages API client (plain chat fallback)
+      VaultAgent.swift        Agentic tool loop + tool/system definitions
+      VaultStore.swift        Folder bookmark, iCloud sync, indexing, tool execution, writes
+      NoteIndex.swift         SQLite FTS5 + per-note vectors; hybrid search
+      Embedder.swift          On-device sentence embeddings (NaturalLanguage)
+      Settings.swift          API key, model, note-editing toggle
       KeychainStore.swift
     ViewModels/ChatViewModel.swift
     Views/
-      ChatView.swift          Chat screen + input bar + tool-activity row
+      ChatView.swift          Chat screen, input bar, tool-activity row, citation routing
       MessageBubble.swift
-      SettingsView.swift      API key, vault folder picker, model picker
+      MarkdownText.swift       Lightweight Markdown renderer (no dependencies)
+      NoteViewerView.swift     In-app note viewer (opened from a citation)
+      SettingsView.swift       API key, vault picker, model, editing toggle
 ```
 
-## Prerequisites (one-time)
+No external dependencies — only Apple frameworks (SwiftUI, NaturalLanguage, system SQLite).
 
-This Mac currently has only the Command Line Tools. Building/running an iOS app needs **full Xcode**:
+## Build & run
 
-1. Install **Xcode** from the Mac App Store (large download).
-2. Point the toolchain at it and accept the license:
-   ```bash
-   sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
-   sudo xcodebuild -license accept
-   ```
-
-## Build & run in the Simulator
-
-The project file is generated from `project.yml` with [XcodeGen]:
+Requires **Xcode** (full install, not just Command Line Tools). Open and run:
 
 ```bash
-cd "VaultChat"
-xcodegen generate         # writes VaultChat.xcodeproj
-open VaultChat.xcodeproj   # then press ⌘R, or use the build steps below
+open VaultChat.xcodeproj   # then select a simulator or your device and press ⌘R
 ```
 
-Once Xcode is installed, I (Claude Code) can generate the project, build it, and drive the
-iOS Simulator from here to show it running and iterate on it.
+Or from the command line, for a simulator:
 
-## Running on your actual iPhone
+```bash
+xcodebuild -project VaultChat.xcodeproj -scheme VaultChat \
+  -sdk iphonesimulator -configuration Debug \
+  -destination 'generic/platform=iOS Simulator' build
+```
 
-1. Open `VaultChat.xcodeproj` in Xcode.
-2. Select the **VaultChat** target → Signing & Capabilities → check *Automatically manage
-   signing* and pick your Apple ID as the team (a free Apple ID works for personal use).
-3. Plug in your iPhone, select it as the run destination, press ⌘R.
-4. On the phone: Settings → General → VPN & Device Management → trust the developer app.
+## Running on your iPhone
 
-## Configuration
+1. Open `VaultChat.xcodeproj`, select the **VaultChat** target → **Signing & Capabilities**,
+   check *Automatically manage signing*, and choose your Apple ID team (a free one works).
+2. Plug in your iPhone (unlocked), select it as the run destination, press **⌘R**.
+3. On the phone: **Settings → General → VPN & Device Management** → trust the developer app.
 
-On first launch the app opens Settings and asks for your Anthropic API key. It's stored in
-the iOS Keychain on-device and sent only to `api.anthropic.com`.
+> A free Apple ID signs apps for ~7 days; re-run from Xcode to refresh.
 
-[XcodeGen]: https://github.com/yonaskolb/XcodeGen
+## Configuration & use
+
+On first launch EZVault opens Settings:
+
+1. Paste your **Anthropic API key** (kept in the iOS Keychain, sent only to `api.anthropic.com`).
+2. **Choose Vault Folder** — point it at your Obsidian vault in **iCloud Drive**. The first
+   index reads and embeds every note (a few minutes for a large vault); after that it's
+   incremental.
+3. Optionally toggle **Allow Claude to edit notes**.
+
+Then ask away — try a concept search, tap a cited note to open it, or ask Claude to add
+something to today's daily note.
