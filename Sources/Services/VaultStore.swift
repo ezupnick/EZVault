@@ -355,7 +355,10 @@ extension VaultStore: ToolRunner {
     /// The actual append — used by the tool (gated) and by user-initiated capture (always allowed).
     private func performAppend(path: String, text: String) async -> String {
         guard let (url, rel) = resolve(path) else { return "Invalid note path \"\(path)\"." }
+        let didAccess = vaultURL?.startAccessingSecurityScopedResource() ?? false
+        defer { if didAccess { vaultURL?.stopAccessingSecurityScopedResource() } }
         var ok = false
+        var failure: String?
         var coordError: NSError?
         NSFileCoordinator().coordinate(writingItemAt: url, options: [], error: &coordError) { u in
             let existing = (try? String(contentsOf: u, encoding: .utf8)) ?? ""
@@ -366,11 +369,12 @@ extension VaultStore: ToolRunner {
                 try FileManager.default.createDirectory(at: u.deletingLastPathComponent(), withIntermediateDirectories: true)
                 try combined.write(to: u, atomically: true, encoding: .utf8)
                 ok = true
-            } catch {}
+            } catch { failure = error.localizedDescription }
         }
-        guard ok else { return "Couldn't write to \(rel)." }
+        if let coordError { return "Couldn't write to \(rel): \(coordError.localizedDescription)" }
+        guard ok else { return "Couldn't write to \(rel): \(failure ?? "unknown error")" }
         await indexSingle(url: url, rel: rel)
-        return "Appended to \(rel)."
+        return "Saved \(rel)."
     }
 
     // MARK: Features used by the UI (quick-switcher, capture, backlinks)
@@ -399,16 +403,20 @@ extension VaultStore: ToolRunner {
         if FileManager.default.fileExists(atPath: url.path) {
             return "A note already exists at \(rel). Use append_note to add to it instead."
         }
+        let didAccess = vaultURL?.startAccessingSecurityScopedResource() ?? false
+        defer { if didAccess { vaultURL?.stopAccessingSecurityScopedResource() } }
         var ok = false
+        var failure: String?
         var coordError: NSError?
         NSFileCoordinator().coordinate(writingItemAt: url, options: [], error: &coordError) { u in
             do {
                 try FileManager.default.createDirectory(at: u.deletingLastPathComponent(), withIntermediateDirectories: true)
                 try text.write(to: u, atomically: true, encoding: .utf8)
                 ok = true
-            } catch {}
+            } catch { failure = error.localizedDescription }
         }
-        guard ok else { return "Couldn't create \(rel)." }
+        if let coordError { return "Couldn't create \(rel): \(coordError.localizedDescription)" }
+        guard ok else { return "Couldn't create \(rel): \(failure ?? "unknown error")" }
         await indexSingle(url: url, rel: rel)
         return "Created \(rel)."
     }
@@ -421,6 +429,8 @@ extension VaultStore: ToolRunner {
         guard FileManager.default.fileExists(atPath: url.path) else {
             return "No note at \(rel). Use create_note to make it."
         }
+        let didAccess = vaultURL?.startAccessingSecurityScopedResource() ?? false
+        defer { if didAccess { vaultURL?.stopAccessingSecurityScopedResource() } }
         var result = "Couldn't write to \(rel)."
         var coordError: NSError?
         NSFileCoordinator().coordinate(writingItemAt: url, options: [], error: &coordError) { u in

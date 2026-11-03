@@ -8,6 +8,7 @@ struct CaptureView: View {
     @StateObject private var speech = SpeechRecognizer()
     @State private var text = ""
     @State private var saving = false
+    @State private var status: String?
 
     var body: some View {
         NavigationStack {
@@ -24,6 +25,15 @@ struct CaptureView: View {
                     }
                 } footer: {
                     Text("Saves a new note in your capture folder (default: EZVault).")
+                }
+
+                if let status {
+                    Section {
+                        Text(status)
+                            .font(.footnote)
+                            .foregroundStyle(status.hasPrefix("Saved") ? Color.green : Color.red)
+                            .textSelection(.enabled)
+                    }
                 }
             }
             .navigationTitle("New Capture")
@@ -49,9 +59,10 @@ struct CaptureView: View {
         speech.stop()
         Task {
             vault.captureFolder = settings.captureFolder
-            _ = await vault.captureNote(captured)
+            let result = await vault.captureNote(captured)
             saving = false
-            dismiss()
+            status = result
+            if result.hasPrefix("Saved") { text = "" }
         }
     }
 }
