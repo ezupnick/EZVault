@@ -51,34 +51,48 @@ struct NoteViewerView: View {
     }
 }
 
-private struct NoteContentView: View {
+struct NoteContentView: View {
     let ref: NoteRef
     @EnvironmentObject var vault: VaultStore
     @State private var content: String?
     @State private var resolvedTitle: String?
+    @State private var backlinks: [String] = []
     @State private var loading = true
 
     var body: some View {
         ScrollView {
-            if loading {
-                ProgressView().padding(.top, 40)
-            } else if let content, !content.isEmpty {
-                MarkdownText(text: content)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding()
-            } else {
-                Text("Couldn't find this note.")
-                    .foregroundStyle(.secondary)
-                    .padding(.top, 40)
+            VStack(alignment: .leading, spacing: 16) {
+                if loading {
+                    ProgressView().frame(maxWidth: .infinity).padding(.top, 40)
+                } else if let content, !content.isEmpty {
+                    MarkdownText(text: content)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                } else {
+                    Text("Couldn't find this note.")
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity).padding(.top, 40)
+                }
+                if !backlinks.isEmpty {
+                    Divider()
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Linked from").font(.caption).foregroundStyle(.secondary)
+                        ForEach(backlinks, id: \.self) { bp in
+                            MarkdownText(text: "[[\((bp as NSString).lastPathComponent.replacingOccurrences(of: ".md", with: ""))]]")
+                        }
+                    }
+                }
             }
+            .padding()
         }
         .navigationTitle(resolvedTitle ?? ref.displayName)
         .navigationBarTitleDisplayMode(.inline)
         .task {
             let path = ref.isWiki ? await vault.resolveWikilink(ref.raw) : ref.raw
             if let path {
-                resolvedTitle = (path as NSString).lastPathComponent.replacingOccurrences(of: ".md", with: "")
+                let name = (path as NSString).lastPathComponent.replacingOccurrences(of: ".md", with: "")
+                resolvedTitle = name
                 content = await vault.noteBody(path)
+                backlinks = await vault.backlinks(toNoteNamed: name)
             }
             loading = false
         }

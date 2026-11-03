@@ -56,6 +56,16 @@ struct SettingsView: View {
                 } footer: {
                     Text("Lets Claude append to or create notes when you ask. It never deletes or overwrites existing notes.")
                 }
+
+                Section {
+                    TextField("Daily notes folder (optional)", text: $settings.dailyNoteFolder)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                } header: {
+                    Text("Quick capture")
+                } footer: {
+                    Text("Where new daily notes (YYYY-MM-DD) are created, e.g. \"Dailies\". Blank = vault root.")
+                }
             }
             .navigationTitle("Settings")
             .navigationBarTitleDisplayMode(.inline)

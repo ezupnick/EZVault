@@ -14,6 +14,16 @@ final class ChatViewModel: ObservableObject {
         streamTask?.cancel()
     }
 
+    /// Keep context bounded: send only the most recent turns, starting with a user
+    /// message (required by the API), so long chats stay fast and cheap.
+    private static let maxContextMessages = 20
+    private static func capContext(_ msgs: [ChatMessage]) -> [ChatMessage] {
+        guard msgs.count > maxContextMessages else { return msgs }
+        var trimmed = Array(msgs.suffix(maxContextMessages))
+        while let first = trimmed.first, first.role == .assistant { trimmed.removeFirst() }
+        return trimmed
+    }
+
     func send(_ text: String, settings: Settings, vault: VaultStore) {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, !isStreaming else { return }
@@ -25,8 +35,9 @@ final class ChatViewModel: ObservableObject {
         activity = nil
         errorText = nil
 
-        // Everything up to (but not including) the empty assistant placeholder.
-        let history = Array(messages.prefix(assistantIndex))
+        // Everything up to (but not including) the empty assistant placeholder,
+        // capped to the most recent turns so long chats stay fast and cheap.
+        let history = Self.capContext(Array(messages.prefix(assistantIndex)))
 
         streamTask = Task {
             do {

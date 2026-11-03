@@ -30,8 +30,8 @@ struct VaultAgent {
         has nothing relevant, say so \
         rather than guessing. To find the newest note (such as the latest daily note), call \
         list_notes with sort='recent' instead of paging through a long list. Notes may carry tags \
-        from YAML frontmatter or inline #tags; search results show them, and find_by_tag lists \
-        every note with a given tag. When the user asks \
+        from YAML frontmatter or inline #tags; search results show them, find_by_tag lists every \
+        note with a given tag, and backlinks lists notes that link to a note. When the user asks \
         you to save or capture something, use append_note to add to the end of a note (such as \
         today's daily), create_note for a new note, or — to place text at a specific spot in an \
         existing note (under a heading, at the top, within a section) — read_note first, then \
@@ -64,6 +64,11 @@ struct VaultAgent {
                               "properties": ["tag": ["type": "string", "description": "Tag without the # (e.g. 'project' or 'project/ios')."],
                                              "limit": ["type": "integer", "description": "Max results (default 50, max 300)."]],
                               "required": ["tag"]]],
+            ["name": "backlinks",
+             "description": "List notes that link to a given note via [[wikilinks]]. Use when the user asks what references or links to a note.",
+             "input_schema": ["type": "object",
+                              "properties": ["note": ["type": "string", "description": "Note name or path to find references to."]],
+                              "required": ["note"]]],
             ["name": "append_note",
              "description": "Append Markdown text to a note (creates it if missing). Use for quick capture, e.g. adding to today's daily note. Requires the user to have note editing enabled.",
              "input_schema": ["type": "object",

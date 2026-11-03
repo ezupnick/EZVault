@@ -7,6 +7,9 @@ struct ChatView: View {
     @State private var input = ""
     @State private var showSettings = false
     @State private var noteToOpen: NoteRef?
+    @State private var showSwitcher = false
+    @State private var showCapture = false
+    @StateObject private var speech = SpeechRecognizer()
 
     var body: some View {
         NavigationStack {
@@ -27,6 +30,12 @@ struct ChatView: View {
                         }
                     }
                 }
+                ToolbarItemGroup(placement: .topBarLeading) {
+                    if vault.isReady {
+                        Button { showSwitcher = true } label: { Image(systemName: "magnifyingglass") }
+                        Button { showCapture = true } label: { Image(systemName: "square.and.pencil") }
+                    }
+                }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button { showSettings = true } label: { Image(systemName: "gearshape") }
                 }
@@ -39,6 +48,12 @@ struct ChatView: View {
             .onAppear { if !settings.hasKey { showSettings = true } }
             .sheet(item: $noteToOpen) { note in
                 NoteViewerView(ref: note).environmentObject(vault)
+            }
+            .sheet(isPresented: $showSwitcher) {
+                QuickSwitcherView().environmentObject(vault)
+            }
+            .sheet(isPresented: $showCapture) {
+                CaptureView().environmentObject(vault).environmentObject(settings)
             }
             // Route tapped note citations and [[wikilinks]] to the note viewer.
             .environment(\.openURL, OpenURLAction { url in
@@ -85,6 +100,13 @@ struct ChatView: View {
 
     private var inputBar: some View {
         HStack(alignment: .bottom, spacing: 8) {
+            Button {
+                if speech.isRecording { speech.stop() } else { input = ""; speech.start() }
+            } label: {
+                Image(systemName: speech.isRecording ? "mic.fill" : "mic")
+                    .font(.title2)
+                    .foregroundStyle(speech.isRecording ? Color.red : Color.secondary)
+            }
             TextField("Ask your vault…", text: $input, axis: .vertical)
                 .lineLimit(1...5)
                 .textFieldStyle(.roundedBorder)
@@ -98,10 +120,14 @@ struct ChatView: View {
             .disabled(!vm.isStreaming && input.trimmingCharacters(in: .whitespaces).isEmpty)
         }
         .padding()
+        .onChange(of: speech.transcript) { _, newValue in
+            if speech.isRecording { input = newValue }
+        }
     }
 
     private func send() {
         guard settings.hasKey else { showSettings = true; return }
+        speech.stop()
         let text = input
         input = ""
         vm.send(text, settings: settings, vault: vault)

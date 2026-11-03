@@ -18,6 +18,9 @@ final class VaultStore: ObservableObject {
     /// Whether Claude may create/append notes (mirrors the Settings toggle).
     var writingEnabled = true
 
+    /// Folder for new daily notes (mirrors the Settings field); empty = vault root.
+    var dailyNoteFolder = ""
+
     /// Ready to answer from notes once a folder is picked and something is indexed.
     var isReady: Bool { vaultURL != nil && indexedCount > 0 }
 
@@ -290,6 +293,13 @@ extension VaultStore: ToolRunner {
             guard !paths.isEmpty else { return "No notes tagged #\(clean)." }
             return "Notes tagged #\(clean):\n" + paths.joined(separator: "\n")
 
+        case "backlinks":
+            let note = (input["note"] as? String) ?? ""
+            let name = (note as NSString).lastPathComponent.replacingOccurrences(of: ".md", with: "")
+            let paths = await index.backlinks(toName: name, limit: 100)
+            guard !paths.isEmpty else { return "No notes link to [[\(name)]]." }
+            return "Notes linking to [[\(name)]]:\n" + paths.joined(separator: "\n")
+
         case "list_notes":
             let folder = input["folder"] as? String
             let recentFirst = (input["sort"] as? String) != "name"   // default: newest first
@@ -339,6 +349,11 @@ extension VaultStore: ToolRunner {
 
     func appendToNote(path: String, text: String) async -> String {
         guard writingEnabled else { return Self.editingDisabled }
+        return await performAppend(path: path, text: text)
+    }
+
+    /// The actual append — used by the tool (gated) and by user-initiated capture (always allowed).
+    private func performAppend(path: String, text: String) async -> String {
         guard let (url, rel) = resolve(path) else { return "Invalid note path \"\(path)\"." }
         var ok = false
         var coordError: NSError?
@@ -356,6 +371,29 @@ extension VaultStore: ToolRunner {
         guard ok else { return "Couldn't write to \(rel)." }
         await indexSingle(url: url, rel: rel)
         return "Appended to \(rel)."
+    }
+
+    // MARK: Features used by the UI (quick-switcher, capture, backlinks)
+
+    func quickFind(_ query: String) async -> [(path: String, title: String)] {
+        await index.quickFind(query, limit: 40)
+    }
+
+    func backlinks(toNoteNamed name: String) async -> [String] {
+        await index.backlinks(toName: name, limit: 50)
+    }
+
+    /// Appends captured text to today's daily note (existing one if found, else creates it).
+    func captureToDaily(_ text: String) async -> String {
+        let fmt = DateFormatter()
+        fmt.dateFormat = "yyyy-MM-dd"
+        let today = fmt.string(from: Date())
+        if let existing = await index.pathForName(today) {
+            return await performAppend(path: existing, text: text)
+        }
+        let folder = dailyNoteFolder.trimmingCharacters(in: CharacterSet(charactersIn: " /"))
+        let path = folder.isEmpty ? "\(today).md" : "\(folder)/\(today).md"
+        return await performAppend(path: path, text: text)
     }
 
     func createNote(path: String, text: String) async -> String {

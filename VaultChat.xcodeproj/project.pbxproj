@@ -168,6 +168,8 @@
 				DEVELOPMENT_TEAM = TJ3XFFGK5V;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = EZVault;
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "EZVault uses the microphone for voice dictation.";
+				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "EZVault transcribes your voice to text on this device.";
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
@@ -191,6 +193,8 @@
 				DEVELOPMENT_TEAM = TJ3XFFGK5V;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = EZVault;
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "EZVault uses the microphone for voice dictation.";
+				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "EZVault transcribes your voice to text on this device.";
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;

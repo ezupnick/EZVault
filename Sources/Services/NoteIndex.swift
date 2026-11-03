@@ -260,6 +260,57 @@ actor NoteIndex {
         return out
     }
 
+    /// Local "quick switcher" search over titles/paths (recent first when query is empty).
+    func quickFind(_ query: String, limit: Int) -> [(path: String, title: String)] {
+        var stmt: OpaquePointer?
+        defer { sqlite3_finalize(stmt) }
+        let q = query.trimmingCharacters(in: .whitespaces).lowercased()
+        let sql = q.isEmpty
+            ? "SELECT path, title FROM files ORDER BY mtime DESC LIMIT ?;"
+            : "SELECT path, title FROM files WHERE lower(title) LIKE ? OR lower(path) LIKE ? ORDER BY mtime DESC LIMIT ?;"
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return [] }
+        if q.isEmpty {
+            sqlite3_bind_int(stmt, 1, Int32(limit))
+        } else {
+            let pat = "%" + q + "%"
+            sqlite3_bind_text(stmt, 1, pat, -1, SQLITE_TRANSIENT)
+            sqlite3_bind_text(stmt, 2, pat, -1, SQLITE_TRANSIENT)
+            sqlite3_bind_int(stmt, 3, Int32(limit))
+        }
+        var out: [(String, String)] = []
+        while sqlite3_step(stmt) == SQLITE_ROW {
+            let p = sqlite3_column_text(stmt, 0).map { String(cString: $0) } ?? ""
+            let t = sqlite3_column_text(stmt, 1).map { String(cString: $0) } ?? ""
+            out.append((p, t))
+        }
+        return out.map { (path: $0.0, title: $0.1) }
+    }
+
+    /// Notes whose body links to a note name via [[name]], [[name|alias]], or [[name#heading]].
+    func backlinks(toName name: String, limit: Int) -> [String] {
+        let n = name.trimmingCharacters(in: .whitespaces).lowercased()
+        guard !n.isEmpty else { return [] }
+        var stmt: OpaquePointer?
+        defer { sqlite3_finalize(stmt) }
+        let sql = """
+            SELECT path FROM files
+            WHERE lower(body) LIKE '%[[' || ? || ']]%'
+               OR lower(body) LIKE '%[[' || ? || '|%'
+               OR lower(body) LIKE '%[[' || ? || '#%'
+            ORDER BY mtime DESC LIMIT ?;
+            """
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return [] }
+        sqlite3_bind_text(stmt, 1, n, -1, SQLITE_TRANSIENT)
+        sqlite3_bind_text(stmt, 2, n, -1, SQLITE_TRANSIENT)
+        sqlite3_bind_text(stmt, 3, n, -1, SQLITE_TRANSIENT)
+        sqlite3_bind_int(stmt, 4, Int32(limit))
+        var out: [String] = []
+        while sqlite3_step(stmt) == SQLITE_ROW {
+            if let c = sqlite3_column_text(stmt, 0) { out.append(String(cString: c)) }
+        }
+        return out
+    }
+
     private func queryOne(_ sql: String, binds: [String]) -> String? {
         var stmt: OpaquePointer?
         defer { sqlite3_finalize(stmt) }
