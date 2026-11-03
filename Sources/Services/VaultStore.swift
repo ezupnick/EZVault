@@ -354,6 +354,7 @@ extension VaultStore: ToolRunner {
 
     /// The actual append — used by the tool (gated) and by user-initiated capture (always allowed).
     private func performAppend(path: String, text: String) async -> String {
+        guard vaultURL != nil else { return "No vault folder is connected. Re-pick it in Settings." }
         guard let (url, rel) = resolve(path) else { return "Invalid note path \"\(path)\"." }
         let didAccess = vaultURL?.startAccessingSecurityScopedResource() ?? false
         defer { if didAccess { vaultURL?.stopAccessingSecurityScopedResource() } }
@@ -461,12 +462,11 @@ extension VaultStore: ToolRunner {
     private func resolve(_ path: String) -> (url: URL, rel: String)? {
         guard let root = vaultURL else { return nil }
         var rel = path.trimmingCharacters(in: .whitespaces)
-        if rel.hasPrefix("/") { rel.removeFirst() }
-        guard !rel.isEmpty, !rel.contains("..") else { return nil }
+        while rel.hasPrefix("/") { rel.removeFirst() }
+        // A relative path with no ".." component always stays inside the vault.
+        guard !rel.isEmpty, !rel.split(separator: "/").contains("..") else { return nil }
         if (rel as NSString).pathExtension.lowercased() != "md" { rel += ".md" }
-        let url = root.appendingPathComponent(rel)
-        guard url.standardizedFileURL.path.hasPrefix(root.standardizedFileURL.path) else { return nil }
-        return (url, rel)
+        return (root.appendingPathComponent(rel), rel)
     }
 
     /// Re-index a single note right after it's written, so it's immediately searchable.
