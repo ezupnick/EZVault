@@ -212,6 +212,30 @@ actor NoteIndex {
         return String(cString: c)
     }
 
+    /// Resolves a wikilink target (note name, title, or path) to a note path.
+    func pathForName(_ name: String) -> String? {
+        var clean = name.trimmingCharacters(in: .whitespaces)
+        if clean.lowercased().hasSuffix(".md") { clean = String(clean.dropLast(3)) }
+        let lower = clean.lowercased()
+        // 1) exact path, or basename match in any folder
+        if let p = queryOne("SELECT path FROM files WHERE lower(path)=? OR lower(path) LIKE ? ORDER BY length(path) LIMIT 1;",
+                            binds: [lower + ".md", "%/" + lower + ".md"]) { return p }
+        // 2) exact title (from a leading # heading)
+        if let p = queryOne("SELECT path FROM files WHERE lower(title)=? LIMIT 1;", binds: [lower]) { return p }
+        // 3) loose path contains
+        return queryOne("SELECT path FROM files WHERE lower(path) LIKE ? ORDER BY length(path) LIMIT 1;",
+                        binds: ["%" + lower + "%"])
+    }
+
+    private func queryOne(_ sql: String, binds: [String]) -> String? {
+        var stmt: OpaquePointer?
+        defer { sqlite3_finalize(stmt) }
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return nil }
+        for (i, b) in binds.enumerated() { sqlite3_bind_text(stmt, Int32(i + 1), b, -1, SQLITE_TRANSIENT) }
+        guard sqlite3_step(stmt) == SQLITE_ROW, let c = sqlite3_column_text(stmt, 0) else { return nil }
+        return String(cString: c)
+    }
+
     private func titleAndExcerpt(path: String) -> (title: String, excerpt: String)? {
         var stmt: OpaquePointer?
         defer { sqlite3_finalize(stmt) }

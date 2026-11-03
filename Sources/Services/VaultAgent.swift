@@ -24,8 +24,9 @@ struct VaultAgent {
         You help the user explore their personal Obsidian vault — a collection of Markdown notes.
         When a question could be answered from their notes, use the tools to search and read before \
         answering: start with search_notes to find candidates, then read_note for detail. \
-        When you reference a note, cite it using the Markdown link from that note's `link:` field \
-        in the search results, so the user can tap it to open the note. Be concise. If the vault \
+        When you mention a note, write it as an Obsidian wikilink in double brackets using the \
+        note's name (the search results show each note's [[name]]), e.g. [[2026-11-02]]. These \
+        render as clickable links that open the exact note. Be concise. If the vault \
         has nothing relevant, say so \
         rather than guessing. To find the newest note (such as the latest daily note), call \
         list_notes with sort='recent' instead of paging through a long list. When the user asks \

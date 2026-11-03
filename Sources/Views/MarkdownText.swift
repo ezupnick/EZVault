@@ -150,7 +150,42 @@ private enum Block {
     }
 
     private static func attributed(_ s: String) -> AttributedString {
-        (try? AttributedString(markdown: s, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)))
+        let linked = linkifyWikilinks(s)
+        return (try? AttributedString(markdown: linked, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)))
             ?? AttributedString(s)
+    }
+
+    /// Turns Obsidian `[[Note]]`, `[[Note|Alias]]`, `[[Note#Heading]]` into tappable
+    /// Markdown links (ezvault://wiki/<name>) that open the exact note.
+    private static func linkifyWikilinks(_ s: String) -> String {
+        guard s.contains("[[") else { return s }
+        var result = ""
+        var rest = Substring(s)
+        while let open = rest.range(of: "[[") {
+            result += rest[rest.startIndex..<open.lowerBound]
+            let after = rest[open.upperBound...]
+            guard let close = after.range(of: "]]") else {
+                result += rest[open.lowerBound...]
+                return result
+            }
+            result += wikiLinkMarkdown(String(after[after.startIndex..<close.lowerBound]))
+            rest = after[close.upperBound...]
+        }
+        result += rest
+        return result
+    }
+
+    private static func wikiLinkMarkdown(_ inner: String) -> String {
+        let aliasParts = inner.split(separator: "|", maxSplits: 1, omittingEmptySubsequences: false)
+        let targetPart = String(aliasParts[0])
+        let alias = aliasParts.count > 1 ? String(aliasParts[1]) : nil
+        let name = targetPart.split(separator: "#", maxSplits: 1).first.map(String.init) ?? targetPart
+        let display = (alias ?? inner).replacingOccurrences(of: "[", with: " ").replacingOccurrences(of: "]", with: " ")
+        let trimmed = name.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty,
+              let encoded = trimmed.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) else {
+            return "[[\(inner)]]"
+        }
+        return "[\(display)](ezvault://wiki/\(encoded))"
     }
 }

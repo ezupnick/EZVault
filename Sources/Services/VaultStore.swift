@@ -199,7 +199,8 @@ extension VaultStore: ToolRunner {
             let hits = await index.hybrid(ftsQuery: Self.ftsQuery(query), queryVector: qvec, limit: limit)
             guard !hits.isEmpty else { return "No notes matched \"\(query)\"." }
             return hits.map {
-                "- \($0.title)\n  link: \(Self.citation(title: $0.title, path: $0.path))\n  path: \($0.path)\n  excerpt: …\($0.snippet)…"
+                let name = ($0.path as NSString).lastPathComponent.replacingOccurrences(of: ".md", with: "")
+                return "- [[\(name)]] — \($0.title)\n  path: \($0.path)\n  excerpt: …\($0.snippet)…"
             }.joined(separator: "\n")
 
         case "read_note":
@@ -242,6 +243,11 @@ extension VaultStore: ToolRunner {
     /// Fetches a note's full text for the in-app viewer.
     func noteBody(_ path: String) async -> String? {
         await index.body(forPath: path)
+    }
+
+    /// Resolves an Obsidian wikilink target (name/title/path) to a note path.
+    func resolveWikilink(_ target: String) async -> String? {
+        await index.pathForName(target)
     }
 
     /// A tappable Markdown citation link for a note, for the model to drop into answers.
