@@ -388,6 +388,10 @@ extension VaultStore: ToolRunner {
         await index.backlinks(toName: name, limit: 50)
     }
 
+    func relatedNotes(toPath path: String) async -> [String] {
+        await index.relatedNotes(toPath: path, limit: 5)
+    }
+
     /// Saves captured text as a new, timestamped note inside the capture folder (default "EZVault").
     func captureNote(_ text: String) async -> String {
         let folder = captureFolder.trimmingCharacters(in: CharacterSet(charactersIn: " /"))

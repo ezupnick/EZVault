@@ -358,6 +358,25 @@ actor NoteIndex {
 
     // MARK: Semantic scoring
 
+    /// Notes most semantically similar to a given note (cosine over stored vectors).
+    func relatedNotes(toPath path: String, limit: Int) -> [String] {
+        let vectors = loadVectors()
+        guard let me = vectors.first(where: { $0.path == path })?.vec else { return [] }
+        let myNorm = sqrt(me.reduce(Float(0)) { $0 + $1 * $1 })
+        guard myNorm > 0 else { return [] }
+        var scored: [(String, Float)] = []
+        for (p, v) in vectors where p != path && v.count == me.count {
+            var dot: Float = 0, vNorm2: Float = 0
+            for i in 0..<v.count {
+                dot += v[i] * me[i]
+                vNorm2 += v[i] * v[i]
+            }
+            let denom = myNorm * sqrt(vNorm2)
+            if denom > 0 { scored.append((p, dot / denom)) }
+        }
+        return scored.sorted { $0.1 > $1.1 }.prefix(limit).map { $0.0 }
+    }
+
     private func semanticRanked(queryVector: [Float], limit: Int) -> [(path: String, score: Float)] {
         let qNorm = sqrt(queryVector.reduce(Float(0)) { $0 + $1 * $1 })
         guard qNorm > 0 else { return [] }

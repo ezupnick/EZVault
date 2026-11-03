@@ -57,6 +57,7 @@ struct NoteContentView: View {
     @State private var content: String?
     @State private var resolvedTitle: String?
     @State private var backlinks: [String] = []
+    @State private var related: [String] = []
     @State private var loading = true
 
     var body: some View {
@@ -72,15 +73,8 @@ struct NoteContentView: View {
                         .foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity).padding(.top, 40)
                 }
-                if !backlinks.isEmpty {
-                    Divider()
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Linked from").font(.caption).foregroundStyle(.secondary)
-                        ForEach(backlinks, id: \.self) { bp in
-                            MarkdownText(text: "[[\((bp as NSString).lastPathComponent.replacingOccurrences(of: ".md", with: ""))]]")
-                        }
-                    }
-                }
+                linkSection("Related", related)
+                linkSection("Linked from", backlinks)
             }
             .padding()
         }
@@ -92,9 +86,23 @@ struct NoteContentView: View {
                 let name = (path as NSString).lastPathComponent.replacingOccurrences(of: ".md", with: "")
                 resolvedTitle = name
                 content = await vault.noteBody(path)
+                related = await vault.relatedNotes(toPath: path)
                 backlinks = await vault.backlinks(toNoteNamed: name)
             }
             loading = false
+        }
+    }
+
+    @ViewBuilder
+    private func linkSection(_ title: String, _ paths: [String]) -> some View {
+        if !paths.isEmpty {
+            Divider()
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title).font(.caption).foregroundStyle(.secondary)
+                ForEach(paths, id: \.self) { p in
+                    MarkdownText(text: "[[\((p as NSString).lastPathComponent.replacingOccurrences(of: ".md", with: ""))]]")
+                }
+            }
         }
     }
 }
