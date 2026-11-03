@@ -18,8 +18,8 @@ final class VaultStore: ObservableObject {
     /// Whether Claude may create/append notes (mirrors the Settings toggle).
     var writingEnabled = true
 
-    /// Folder for new daily notes (mirrors the Settings field); empty = vault root.
-    var dailyNoteFolder = ""
+    /// Folder where captured notes are saved (mirrors the Settings field).
+    var captureFolder = "EZVault"
 
     /// Ready to answer from notes once a folder is picked and something is indexed.
     var isReady: Bool { vaultURL != nil && indexedCount > 0 }
@@ -383,16 +383,13 @@ extension VaultStore: ToolRunner {
         await index.backlinks(toName: name, limit: 50)
     }
 
-    /// Appends captured text to today's daily note (existing one if found, else creates it).
-    func captureToDaily(_ text: String) async -> String {
+    /// Saves captured text as a new, timestamped note inside the capture folder (default "EZVault").
+    func captureNote(_ text: String) async -> String {
+        let folder = captureFolder.trimmingCharacters(in: CharacterSet(charactersIn: " /"))
+        let base = folder.isEmpty ? "EZVault" : folder
         let fmt = DateFormatter()
-        fmt.dateFormat = "yyyy-MM-dd"
-        let today = fmt.string(from: Date())
-        if let existing = await index.pathForName(today) {
-            return await performAppend(path: existing, text: text)
-        }
-        let folder = dailyNoteFolder.trimmingCharacters(in: CharacterSet(charactersIn: " /"))
-        let path = folder.isEmpty ? "\(today).md" : "\(folder)/\(today).md"
+        fmt.dateFormat = "yyyy-MM-dd-HHmmss"
+        let path = "\(base)/\(fmt.string(from: Date())).md"
         return await performAppend(path: path, text: text)
     }
 

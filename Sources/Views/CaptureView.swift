@@ -23,10 +23,10 @@ struct CaptureView: View {
                             .foregroundStyle(speech.isRecording ? Color.red : Color.accentColor)
                     }
                 } footer: {
-                    Text("Adds to today's daily note (creates it if needed).")
+                    Text("Saves a new note in your capture folder (default: EZVault).")
                 }
             }
-            .navigationTitle("Add to Today")
+            .navigationTitle("New Capture")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -48,8 +48,8 @@ struct CaptureView: View {
         let captured = text
         speech.stop()
         Task {
-            vault.dailyNoteFolder = settings.dailyNoteFolder
-            _ = await vault.captureToDaily(captured)
+            vault.captureFolder = settings.captureFolder
+            _ = await vault.captureNote(captured)
             saving = false
             dismiss()
         }

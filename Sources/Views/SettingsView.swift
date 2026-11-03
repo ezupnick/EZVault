@@ -58,13 +58,13 @@ struct SettingsView: View {
                 }
 
                 Section {
-                    TextField("Daily notes folder (optional)", text: $settings.dailyNoteFolder)
+                    TextField("Capture folder", text: $settings.captureFolder)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
                 } header: {
                     Text("Quick capture")
                 } footer: {
-                    Text("Where new daily notes (YYYY-MM-DD) are created, e.g. \"Dailies\". Blank = vault root.")
+                    Text("New captures are saved as notes in this folder. Default: EZVault.")
                 }
             }
             .navigationTitle("Settings")
