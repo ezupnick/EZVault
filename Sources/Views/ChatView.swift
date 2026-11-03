@@ -88,10 +88,14 @@ struct ChatView: View {
             TextField("Ask your vault…", text: $input, axis: .vertical)
                 .lineLimit(1...5)
                 .textFieldStyle(.roundedBorder)
-            Button(action: send) {
-                Image(systemName: "arrow.up.circle.fill").font(.title)
+            Button {
+                if vm.isStreaming { vm.stop() } else { send() }
+            } label: {
+                Image(systemName: vm.isStreaming ? "stop.circle.fill" : "arrow.up.circle.fill")
+                    .font(.title)
+                    .foregroundStyle(vm.isStreaming ? Color.red : Color.accentColor)
             }
-            .disabled(input.trimmingCharacters(in: .whitespaces).isEmpty || vm.isStreaming)
+            .disabled(!vm.isStreaming && input.trimmingCharacters(in: .whitespaces).isEmpty)
         }
         .padding()
     }

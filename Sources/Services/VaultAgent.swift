@@ -29,7 +29,9 @@ struct VaultAgent {
         render as clickable links that open the exact note. Be concise. If the vault \
         has nothing relevant, say so \
         rather than guessing. To find the newest note (such as the latest daily note), call \
-        list_notes with sort='recent' instead of paging through a long list. When the user asks \
+        list_notes with sort='recent' instead of paging through a long list. Notes may carry tags \
+        from YAML frontmatter or inline #tags; search results show them, and find_by_tag lists \
+        every note with a given tag. When the user asks \
         you to save or capture something, use append_note to add to the end of a note (such as \
         today's daily), create_note for a new note, or — to place text at a specific spot in an \
         existing note (under a heading, at the top, within a section) — read_note first, then \
@@ -56,6 +58,12 @@ struct VaultAgent {
                                              "sort": ["type": "string", "enum": ["recent", "name"], "description": "Order: 'recent' (default) or 'name'."],
                                              "limit": ["type": "integer", "description": "Max results (default 300, max 1000)."]],
                               "required": []]],
+            ["name": "find_by_tag",
+             "description": "List notes carrying a tag (from YAML frontmatter or inline #tags). Matches the exact tag and nested children (e.g. 'project' also matches 'project/ios'). Newest first.",
+             "input_schema": ["type": "object",
+                              "properties": ["tag": ["type": "string", "description": "Tag without the # (e.g. 'project' or 'project/ios')."],
+                                             "limit": ["type": "integer", "description": "Max results (default 50, max 300)."]],
+                              "required": ["tag"]]],
             ["name": "append_note",
              "description": "Append Markdown text to a note (creates it if missing). Use for quick capture, e.g. adding to today's daily note. Requires the user to have note editing enabled.",
              "input_schema": ["type": "object",

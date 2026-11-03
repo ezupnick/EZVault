@@ -7,6 +7,13 @@ final class ChatViewModel: ObservableObject {
     @Published var activity: String?      // e.g. "Searching notes: …"
     @Published var errorText: String?
 
+    private var streamTask: Task<Void, Never>?
+
+    /// Cancels an in-progress response (the Stop button).
+    func stop() {
+        streamTask?.cancel()
+    }
+
     func send(_ text: String, settings: Settings, vault: VaultStore) {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, !isStreaming else { return }
@@ -21,7 +28,7 @@ final class ChatViewModel: ObservableObject {
         // Everything up to (but not including) the empty assistant placeholder.
         let history = Array(messages.prefix(assistantIndex))
 
-        Task {
+        streamTask = Task {
             do {
                 if vault.isReady {
                     vault.writingEnabled = settings.allowNoteEditing
@@ -44,10 +51,12 @@ final class ChatViewModel: ObservableObject {
                     }
                 }
             } catch {
-                errorText = error.localizedDescription
-                if assistantIndex < messages.count, messages[assistantIndex].text.isEmpty {
-                    messages.remove(at: assistantIndex)
-                }
+                // A user-initiated stop surfaces as cancellation — don't show it as an error.
+                if !Task.isCancelled { errorText = error.localizedDescription }
+            }
+            // Drop an empty assistant bubble (error before any text, or stopped immediately).
+            if assistantIndex < messages.count, messages[assistantIndex].text.isEmpty {
+                messages.remove(at: assistantIndex)
             }
             activity = nil
             isStreaming = false

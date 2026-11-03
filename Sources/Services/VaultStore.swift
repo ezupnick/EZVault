@@ -103,9 +103,9 @@ final class VaultStore: ObservableObject {
             let mtime = (try? url.resourceValues(forKeys: [.contentModificationDateKey])
                 .contentModificationDate)?.timeIntervalSince1970 ?? 0
             if await index.mtime(forPath: rel) != mtime, let body = readContent(url) {
-                let title = noteTitle(rel: rel, body: body)
-                let vec = Embedder.shared.embed(embedText(title: title, body: body))
-                await index.upsert(path: rel, mtime: mtime, title: title, body: body, vec: vec)
+                let parsed = parseNote(rel: rel, body: body)
+                let vec = Embedder.shared.embed(parsed.embedText)
+                await index.upsert(path: rel, mtime: mtime, title: parsed.title, body: body, tags: parsed.tags, vec: vec)
             }
             if i % 50 == 0 { await progress(i, total) }
         }
@@ -137,17 +137,87 @@ final class VaultStore: ObservableObject {
         return String(p.dropFirst(rootPath.count)).trimmingCharacters(in: CharacterSet(charactersIn: "/"))
     }
 
-    private nonisolated static func noteTitle(rel: String, body: String) -> String {
-        for line in body.prefix(2000).split(separator: "\n") {
+    private nonisolated static func noteTitle(rel: String, frontmatter: String?, content: String) -> String {
+        if let fm = frontmatter, let t = frontmatterValue("title", in: fm), !t.isEmpty { return t }
+        for line in content.prefix(2000).split(separator: "\n") {
             let t = line.trimmingCharacters(in: .whitespaces)
             if t.hasPrefix("# ") { return String(t.dropFirst(2)) }
         }
         return (rel as NSString).lastPathComponent.replacingOccurrences(of: ".md", with: "")
     }
 
-    /// Text fed to the embedder: the title plus the opening of the note.
-    private nonisolated static func embedText(title: String, body: String) -> String {
-        title + "\n" + String(body.prefix(500))
+    /// Parses a note into its title, normalized tag string, and the text to embed —
+    /// separating YAML frontmatter from the content so it doesn't pollute either.
+    private nonisolated static func parseNote(rel: String, body: String) -> (title: String, tags: String, embedText: String) {
+        let (fm, content) = splitFrontmatter(body)
+        let title = noteTitle(rel: rel, frontmatter: fm, content: content)
+        let tagList = extractTags(frontmatter: fm, content: content)
+        let tags = tagList.isEmpty ? "" : " " + tagList.map { "#\($0)" }.joined(separator: " ") + " "
+        let tagText = tagList.isEmpty ? "" : "\nTags: " + tagList.joined(separator: ", ")
+        let embedText = title + "\n" + String(content.prefix(500)) + tagText
+        return (title, tags, embedText)
+    }
+
+    /// Splits a leading YAML frontmatter block (--- … ---) from the note content.
+    private nonisolated static func splitFrontmatter(_ body: String) -> (frontmatter: String?, content: String) {
+        guard body.hasPrefix("---") else { return (nil, body) }
+        let lines = body.components(separatedBy: "\n")
+        guard let first = lines.first, first.trimmingCharacters(in: .whitespaces) == "---" else { return (nil, body) }
+        for i in 1..<lines.count where lines[i].trimmingCharacters(in: .whitespaces) == "---" {
+            let fm = lines[1..<i].joined(separator: "\n")
+            let content = i + 1 < lines.count ? lines[(i + 1)...].joined(separator: "\n") : ""
+            return (fm, content)
+        }
+        return (nil, body)
+    }
+
+    private nonisolated static func frontmatterValue(_ key: String, in fm: String) -> String? {
+        for line in fm.components(separatedBy: "\n") {
+            let parts = line.split(separator: ":", maxSplits: 1, omittingEmptySubsequences: false)
+            if parts.count == 2, parts[0].trimmingCharacters(in: .whitespaces).lowercased() == key {
+                let v = parts[1].trimmingCharacters(in: CharacterSet(charactersIn: " \"'"))
+                return v.isEmpty ? nil : v
+            }
+        }
+        return nil
+    }
+
+    /// Tags from frontmatter (`tags:` inline or list) plus inline `#tags`, lowercased & de-duped.
+    private nonisolated static func extractTags(frontmatter: String?, content: String) -> [String] {
+        var tags = Set<String>()
+        if let fm = frontmatter {
+            let lines = fm.components(separatedBy: "\n")
+            var i = 0
+            while i < lines.count {
+                let lower = lines[i].trimmingCharacters(in: .whitespaces).lowercased()
+                if lower.hasPrefix("tags:") || lower.hasPrefix("tag:") {
+                    let after = lines[i].drop(while: { $0 != ":" }).dropFirst().trimmingCharacters(in: .whitespaces)
+                    if after.isEmpty {
+                        var j = i + 1
+                        while j < lines.count {
+                            let l = lines[j].trimmingCharacters(in: .whitespaces)
+                            if l.hasPrefix("- ") { tags.insert(normalizeTag(String(l.dropFirst(2)))); j += 1 } else { break }
+                        }
+                        i = j; continue
+                    } else {
+                        let cleaned = after.replacingOccurrences(of: "[", with: "").replacingOccurrences(of: "]", with: "")
+                        for t in cleaned.split(whereSeparator: { $0 == "," || $0 == " " }) { tags.insert(normalizeTag(String(t))) }
+                    }
+                }
+                i += 1
+            }
+        }
+        if let re = try? NSRegularExpression(pattern: "(?:^|\\s)#([A-Za-z0-9_][A-Za-z0-9_/-]*)") {
+            let ns = content as NSString
+            re.enumerateMatches(in: content, range: NSRange(location: 0, length: ns.length)) { m, _, _ in
+                if let m, m.numberOfRanges > 1 { tags.insert(normalizeTag(ns.substring(with: m.range(at: 1)))) }
+            }
+        }
+        return tags.filter { !$0.isEmpty }.sorted()
+    }
+
+    private nonisolated static func normalizeTag(_ s: String) -> String {
+        s.trimmingCharacters(in: CharacterSet(charactersIn: "#\"' ")).lowercased()
     }
 
     private nonisolated static func readContent(_ url: URL) -> String? {
@@ -200,7 +270,9 @@ extension VaultStore: ToolRunner {
             guard !hits.isEmpty else { return "No notes matched \"\(query)\"." }
             return hits.map {
                 let name = ($0.path as NSString).lastPathComponent.replacingOccurrences(of: ".md", with: "")
-                return "- [[\(name)]] — \($0.title)\n  path: \($0.path)\n  excerpt: …\($0.snippet)…"
+                let tags = $0.tags.trimmingCharacters(in: .whitespaces)
+                let tagLine = tags.isEmpty ? "" : "\n  tags: \(tags)"
+                return "- [[\(name)]] — \($0.title)\(tagLine)\n  path: \($0.path)\n  excerpt: …\($0.snippet)…"
             }.joined(separator: "\n")
 
         case "read_note":
@@ -210,6 +282,13 @@ extension VaultStore: ToolRunner {
             }
             let cap = 24_000
             return body.count > cap ? String(body.prefix(cap)) + "\n\n[truncated]" : body
+
+        case "find_by_tag":
+            let clean = ((input["tag"] as? String) ?? "").trimmingCharacters(in: CharacterSet(charactersIn: "# "))
+            let limit = max(1, min((input["limit"] as? Int) ?? 50, 300))
+            let paths = await index.notesWithTag(clean, limit: limit)
+            guard !paths.isEmpty else { return "No notes tagged #\(clean)." }
+            return "Notes tagged #\(clean):\n" + paths.joined(separator: "\n")
 
         case "list_notes":
             let folder = input["folder"] as? String
@@ -350,9 +429,9 @@ extension VaultStore: ToolRunner {
         guard let body = Self.readContent(url) else { return }
         let mtime = (try? url.resourceValues(forKeys: [.contentModificationDateKey])
             .contentModificationDate)?.timeIntervalSince1970 ?? Date().timeIntervalSince1970
-        let title = Self.noteTitle(rel: rel, body: body)
-        let vec = Embedder.shared.embed(Self.embedText(title: title, body: body))
-        await index.upsert(path: rel, mtime: mtime, title: title, body: body, vec: vec)
+        let parsed = Self.parseNote(rel: rel, body: body)
+        let vec = Embedder.shared.embed(parsed.embedText)
+        await index.upsert(path: rel, mtime: mtime, title: parsed.title, body: body, tags: parsed.tags, vec: vec)
         indexedCount = await index.count()
     }
 }

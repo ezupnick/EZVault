@@ -4,16 +4,17 @@ import SQLite3
 // SQLite wants to know whether a bound string can be freed; TRANSIENT = make a copy.
 private let SQLITE_TRANSIENT = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
 
-/// On-device index of the vault: SQLite FTS5 for keyword search plus a per-note
-/// semantic vector for similarity search. Lives off the main thread as an actor.
+/// On-device index of the vault: SQLite FTS5 for keyword search, a semantic vector
+/// per note, and extracted tags. Lives off the main thread as an actor.
 actor NoteIndex {
     private var db: OpaquePointer?
 
     /// Loaded note vectors, cached in memory for fast cosine scoring. Invalidated on writes.
     private var vectorCache: [(path: String, vec: [Float])]?
 
-    /// Bump to force a full rebuild when the stored shape changes (e.g. adding vectors).
-    private static let schemaVersion: Int32 = 2
+    /// Bump to force a full rebuild when the stored shape changes.
+    /// v2 added vectors; v3 added the tags column.
+    private static let schemaVersion: Int32 = 3
 
     init() { db = NoteIndex.prepare() }
 
@@ -25,14 +26,11 @@ actor NoteIndex {
         return dir.appendingPathComponent("vault-index.sqlite")
     }
 
-    /// Opens the database and ensures the schema/triggers exist. Nonisolated so it can
-    /// run from the actor's initializer. External-content FTS5 mirrors `files`.
     private static func prepare() -> OpaquePointer? {
         var handle: OpaquePointer?
         guard sqlite3_open(dbURL().path, &handle) == SQLITE_OK else { return nil }
         sqlite3_exec(handle, "PRAGMA journal_mode=WAL;", nil, nil, nil)
 
-        // If the stored schema predates vectors, drop and rebuild (one-time re-index).
         var version: Int32 = 0
         var vstmt: OpaquePointer?
         if sqlite3_prepare_v2(handle, "PRAGMA user_version;", -1, &vstmt, nil) == SQLITE_OK,
@@ -52,6 +50,7 @@ actor NoteIndex {
                 mtime REAL NOT NULL,
                 title TEXT NOT NULL,
                 body  TEXT NOT NULL,
+                tags  TEXT NOT NULL DEFAULT '',
                 vec   BLOB
             );
             """,
@@ -96,25 +95,27 @@ actor NoteIndex {
         return sqlite3_step(stmt) == SQLITE_ROW ? sqlite3_column_double(stmt, 0) : nil
     }
 
-    func upsert(path: String, mtime: Double, title: String, body: String, vec: [Float]?) {
+    func upsert(path: String, mtime: Double, title: String, body: String, tags: String, vec: [Float]?) {
         var stmt: OpaquePointer?
         defer { sqlite3_finalize(stmt) }
         let sql = """
-            INSERT INTO files(path,mtime,title,body,vec) VALUES(?,?,?,?,?)
-            ON CONFLICT(path) DO UPDATE SET mtime=excluded.mtime, title=excluded.title, body=excluded.body, vec=excluded.vec;
+            INSERT INTO files(path,mtime,title,body,tags,vec) VALUES(?,?,?,?,?,?)
+            ON CONFLICT(path) DO UPDATE SET mtime=excluded.mtime, title=excluded.title,
+                body=excluded.body, tags=excluded.tags, vec=excluded.vec;
             """
         guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return }
         sqlite3_bind_text(stmt, 1, path, -1, SQLITE_TRANSIENT)
         sqlite3_bind_double(stmt, 2, mtime)
         sqlite3_bind_text(stmt, 3, title, -1, SQLITE_TRANSIENT)
         sqlite3_bind_text(stmt, 4, body, -1, SQLITE_TRANSIENT)
+        sqlite3_bind_text(stmt, 5, tags, -1, SQLITE_TRANSIENT)
         if let vec, !vec.isEmpty {
             let data = vec.withUnsafeBytes { Data($0) }
             data.withUnsafeBytes { raw in
-                _ = sqlite3_bind_blob(stmt, 5, raw.baseAddress, Int32(data.count), SQLITE_TRANSIENT)
+                _ = sqlite3_bind_blob(stmt, 6, raw.baseAddress, Int32(data.count), SQLITE_TRANSIENT)
             }
         } else {
-            sqlite3_bind_null(stmt, 5)
+            sqlite3_bind_null(stmt, 6)
         }
         sqlite3_step(stmt)
         vectorCache = nil
@@ -154,14 +155,14 @@ actor NoteIndex {
         return out
     }
 
-    struct Hit { let path: String; let title: String; let snippet: String }
+    struct Hit { let path: String; let title: String; let snippet: String; let tags: String }
 
     /// Keyword (FTS/bm25) search, title-weighted.
     func search(_ ftsQuery: String, limit: Int) -> [Hit] {
         var stmt: OpaquePointer?
         defer { sqlite3_finalize(stmt) }
         let sql = """
-            SELECT f.path, f.title, snippet(notes_fts, 1, '', '', '…', 12)
+            SELECT f.path, f.title, snippet(notes_fts, 1, '', '', '…', 12), f.tags
             FROM notes_fts JOIN files f ON f.rowid = notes_fts.rowid
             WHERE notes_fts MATCH ?
             ORDER BY bm25(notes_fts, 10.0, 1.0)
@@ -175,7 +176,8 @@ actor NoteIndex {
             let path = sqlite3_column_text(stmt, 0).map { String(cString: $0) } ?? ""
             let title = sqlite3_column_text(stmt, 1).map { String(cString: $0) } ?? ""
             let snip = sqlite3_column_text(stmt, 2).map { String(cString: $0) } ?? ""
-            out.append(Hit(path: path, title: title, snippet: snip))
+            let tags = sqlite3_column_text(stmt, 3).map { String(cString: $0) } ?? ""
+            out.append(Hit(path: path, title: title, snippet: snip, tags: tags))
         }
         return out
     }
@@ -198,8 +200,8 @@ actor NoteIndex {
         let ordered = score.sorted { $0.value > $1.value }.prefix(limit)
         return ordered.compactMap { entry in
             if let hit = ftsByPath[entry.key] { return hit }
-            guard let te = titleAndExcerpt(path: entry.key) else { return nil }
-            return Hit(path: entry.key, title: te.title, snippet: te.excerpt)
+            guard let meta = meta(path: entry.key) else { return nil }
+            return Hit(path: entry.key, title: meta.title, snippet: meta.excerpt, tags: meta.tags)
         }
     }
 
@@ -212,19 +214,50 @@ actor NoteIndex {
         return String(cString: c)
     }
 
+    private func meta(path: String) -> (title: String, excerpt: String, tags: String)? {
+        var stmt: OpaquePointer?
+        defer { sqlite3_finalize(stmt) }
+        guard sqlite3_prepare_v2(db, "SELECT title, substr(body,1,160), tags FROM files WHERE path=?;", -1, &stmt, nil) == SQLITE_OK else { return nil }
+        sqlite3_bind_text(stmt, 1, path, -1, SQLITE_TRANSIENT)
+        guard sqlite3_step(stmt) == SQLITE_ROW else { return nil }
+        let title = sqlite3_column_text(stmt, 0).map { String(cString: $0) } ?? ""
+        let excerpt = sqlite3_column_text(stmt, 1).map { String(cString: $0) } ?? ""
+        let tags = sqlite3_column_text(stmt, 2).map { String(cString: $0) } ?? ""
+        return (title, excerpt, tags)
+    }
+
     /// Resolves a wikilink target (note name, title, or path) to a note path.
     func pathForName(_ name: String) -> String? {
         var clean = name.trimmingCharacters(in: .whitespaces)
         if clean.lowercased().hasSuffix(".md") { clean = String(clean.dropLast(3)) }
         let lower = clean.lowercased()
-        // 1) exact path, or basename match in any folder
         if let p = queryOne("SELECT path FROM files WHERE lower(path)=? OR lower(path) LIKE ? ORDER BY length(path) LIMIT 1;",
                             binds: [lower + ".md", "%/" + lower + ".md"]) { return p }
-        // 2) exact title (from a leading # heading)
         if let p = queryOne("SELECT path FROM files WHERE lower(title)=? LIMIT 1;", binds: [lower]) { return p }
-        // 3) loose path contains
         return queryOne("SELECT path FROM files WHERE lower(path) LIKE ? ORDER BY length(path) LIMIT 1;",
                         binds: ["%" + lower + "%"])
+    }
+
+    /// Notes carrying a tag (exact tag or a nested child like tag/child), newest first.
+    func notesWithTag(_ tag: String, limit: Int) -> [String] {
+        let t = tag.trimmingCharacters(in: CharacterSet(charactersIn: "# ")).lowercased()
+        guard !t.isEmpty else { return [] }
+        var stmt: OpaquePointer?
+        defer { sqlite3_finalize(stmt) }
+        let sql = """
+            SELECT path FROM files
+            WHERE lower(tags) LIKE '% #' || ? || ' %' OR lower(tags) LIKE '% #' || ? || '/%'
+            ORDER BY mtime DESC LIMIT ?;
+            """
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return [] }
+        sqlite3_bind_text(stmt, 1, t, -1, SQLITE_TRANSIENT)
+        sqlite3_bind_text(stmt, 2, t, -1, SQLITE_TRANSIENT)
+        sqlite3_bind_int(stmt, 3, Int32(limit))
+        var out: [String] = []
+        while sqlite3_step(stmt) == SQLITE_ROW {
+            if let c = sqlite3_column_text(stmt, 0) { out.append(String(cString: c)) }
+        }
+        return out
     }
 
     private func queryOne(_ sql: String, binds: [String]) -> String? {
@@ -236,21 +269,9 @@ actor NoteIndex {
         return String(cString: c)
     }
 
-    private func titleAndExcerpt(path: String) -> (title: String, excerpt: String)? {
-        var stmt: OpaquePointer?
-        defer { sqlite3_finalize(stmt) }
-        guard sqlite3_prepare_v2(db, "SELECT title, substr(body,1,160) FROM files WHERE path=?;", -1, &stmt, nil) == SQLITE_OK else { return nil }
-        sqlite3_bind_text(stmt, 1, path, -1, SQLITE_TRANSIENT)
-        guard sqlite3_step(stmt) == SQLITE_ROW else { return nil }
-        let title = sqlite3_column_text(stmt, 0).map { String(cString: $0) } ?? ""
-        let excerpt = sqlite3_column_text(stmt, 1).map { String(cString: $0) } ?? ""
-        return (title, excerpt)
-    }
-
     struct Listing { let paths: [String]; let total: Int }
 
-    /// Lists note paths, newest-first by default; also returns the total match count
-    /// so callers can tell the model when the list was truncated.
+    /// Lists note paths, newest-first by default; also returns the total match count.
     func list(prefix: String?, limit: Int, recentFirst: Bool) -> Listing {
         let total = countFiles(prefix: prefix)
         var stmt: OpaquePointer?
@@ -314,7 +335,6 @@ actor NoteIndex {
                 let bytes = Int(sqlite3_column_bytes(stmt, 1))
                 let count = bytes / MemoryLayout<Float>.size
                 guard count > 0 else { continue }
-                // Copy out (blob storage isn't guaranteed aligned for direct Float access).
                 let data = Data(bytes: raw, count: bytes)
                 var floats = [Float](repeating: 0, count: count)
                 _ = floats.withUnsafeMutableBytes { data.copyBytes(to: $0) }
