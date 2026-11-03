@@ -6,6 +6,7 @@ struct ChatView: View {
     @StateObject private var vm = ChatViewModel()
     @State private var input = ""
     @State private var showSettings = false
+    @State private var noteToOpen: NotePath?
 
     var body: some View {
         NavigationStack {
@@ -36,6 +37,16 @@ struct ChatView: View {
                     .environmentObject(vault)
             }
             .onAppear { if !settings.hasKey { showSettings = true } }
+            .sheet(item: $noteToOpen) { note in
+                NoteViewerView(path: note.path).environmentObject(vault)
+            }
+            // Route tapped citation links (ezvault://note/<path>) to the note viewer.
+            .environment(\.openURL, OpenURLAction { url in
+                guard url.scheme == "ezvault", url.host == "note" else { return .systemAction }
+                let p = url.path.hasPrefix("/") ? String(url.path.dropFirst()) : url.path
+                noteToOpen = NotePath(path: p)
+                return .handled
+            })
         }
     }
 

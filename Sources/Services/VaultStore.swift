@@ -187,8 +187,9 @@ extension VaultStore: ToolRunner {
             let limit = max(1, min((input["limit"] as? Int) ?? 8, 20))
             let hits = await index.search(Self.ftsQuery(query), limit: limit)
             guard !hits.isEmpty else { return "No notes matched \"\(query)\"." }
-            return hits.map { "• \($0.title)\n  path: \($0.path)\n  …\($0.snippet)…" }
-                .joined(separator: "\n")
+            return hits.map {
+                "- \($0.title)\n  link: \(Self.citation(title: $0.title, path: $0.path))\n  path: \($0.path)\n  excerpt: …\($0.snippet)…"
+            }.joined(separator: "\n")
 
         case "read_note":
             let path = (input["path"] as? String) ?? ""
@@ -214,5 +215,16 @@ extension VaultStore: ToolRunner {
         default:
             return "Unknown tool \(name)."
         }
+    }
+
+    /// Fetches a note's full text for the in-app viewer.
+    func noteBody(_ path: String) async -> String? {
+        await index.body(forPath: path)
+    }
+
+    /// A tappable Markdown citation link for a note, for the model to drop into answers.
+    static func citation(title: String, path: String) -> String {
+        let encoded = path.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? path
+        return "[\(title)](ezvault://note/\(encoded))"
     }
 }

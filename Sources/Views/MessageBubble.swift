@@ -8,7 +8,7 @@ struct MessageBubble: View {
     var body: some View {
         HStack {
             if isUser { Spacer(minLength: 40) }
-            Text(message.text.isEmpty ? "…" : message.text)
+            content
                 .textSelection(.enabled)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 8)
@@ -17,5 +17,16 @@ struct MessageBubble: View {
             if !isUser { Spacer(minLength: 40) }
         }
         .frame(maxWidth: .infinity, alignment: isUser ? .trailing : .leading)
+    }
+
+    @ViewBuilder
+    private var content: some View {
+        if isUser {
+            Text(message.text)
+        } else if message.text.isEmpty {
+            Text("…")
+        } else {
+            MarkdownText(text: message.text)
+        }
     }
 }
