@@ -229,6 +229,11 @@ extension VaultStore: ToolRunner {
         case "create_note":
             return await createNote(path: (input["path"] as? String) ?? "", text: (input["text"] as? String) ?? "")
 
+        case "edit_note":
+            return await editNote(path: (input["path"] as? String) ?? "",
+                                   find: (input["find"] as? String) ?? "",
+                                   replace: (input["replace"] as? String) ?? "")
+
         default:
             return "Unknown tool \(name)."
         }
@@ -286,6 +291,37 @@ extension VaultStore: ToolRunner {
         guard ok else { return "Couldn't create \(rel)." }
         await indexSingle(url: url, rel: rel)
         return "Created \(rel)."
+    }
+
+    /// Places or revises text anywhere in a note by replacing an exact, unique snippet.
+    func editNote(path: String, find: String, replace: String) async -> String {
+        guard writingEnabled else { return Self.editingDisabled }
+        guard !find.isEmpty else { return "Provide the exact text to replace (`find`)." }
+        guard let (url, rel) = resolve(path) else { return "Invalid note path \"\(path)\"." }
+        guard FileManager.default.fileExists(atPath: url.path) else {
+            return "No note at \(rel). Use create_note to make it."
+        }
+        var result = "Couldn't write to \(rel)."
+        var coordError: NSError?
+        NSFileCoordinator().coordinate(writingItemAt: url, options: [], error: &coordError) { u in
+            guard let existing = try? String(contentsOf: u, encoding: .utf8) else {
+                result = "Couldn't read \(rel)."; return
+            }
+            let occurrences = existing.components(separatedBy: find).count - 1
+            if occurrences == 0 {
+                result = "Couldn't find that text in \(rel). Read the note and copy the exact snippet to replace."
+                return
+            }
+            if occurrences > 1 {
+                result = "That snippet appears \(occurrences) times in \(rel). Include more surrounding text so it matches once."
+                return
+            }
+            let updated = existing.replacingOccurrences(of: find, with: replace)
+            do { try updated.write(to: u, atomically: true, encoding: .utf8); result = "" } catch {}
+        }
+        guard result.isEmpty else { return result }
+        await indexSingle(url: url, rel: rel)
+        return "Edited \(rel)."
     }
 
     private static let editingDisabled =

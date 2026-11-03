@@ -29,8 +29,10 @@ struct VaultAgent {
         has nothing relevant, say so \
         rather than guessing. To find the newest note (such as the latest daily note), call \
         list_notes with sort='recent' instead of paging through a long list. When the user asks \
-        you to save or capture something, use append_note (to add to an existing note such as \
-        today's daily) or create_note (for a new note), then tell them exactly what you wrote and where.
+        you to save or capture something, use append_note to add to the end of a note (such as \
+        today's daily), create_note for a new note, or — to place text at a specific spot in an \
+        existing note (under a heading, at the top, within a section) — read_note first, then \
+        edit_note to replace an exact snippet. Always tell them exactly what you wrote and where.
         """
 
     private var toolSpecs: [[String: Any]] {
@@ -64,7 +66,14 @@ struct VaultAgent {
              "input_schema": ["type": "object",
                               "properties": ["path": ["type": "string", "description": "New note path, e.g. 'Ideas/App concept.md'."],
                                              "text": ["type": "string", "description": "Markdown content."]],
-                              "required": ["path", "text"]]]
+                              "required": ["path", "text"]]],
+            ["name": "edit_note",
+             "description": "Place or change text anywhere in an existing note by replacing an exact snippet. read_note first, then pass a snippet of the current text to `find` and its replacement to `replace` — e.g. to insert under a heading, set find to the heading line and replace to that same line plus your new text. The snippet must occur exactly once. Requires note editing enabled.",
+             "input_schema": ["type": "object",
+                              "properties": ["path": ["type": "string"],
+                                             "find": ["type": "string", "description": "Exact current text to replace (must occur once)."],
+                                             "replace": ["type": "string", "description": "Replacement text."]],
+                              "required": ["path", "find", "replace"]]]
         ]
     }
 
