@@ -28,7 +28,9 @@ struct VaultAgent {
         in the search results, so the user can tap it to open the note. Be concise. If the vault \
         has nothing relevant, say so \
         rather than guessing. To find the newest note (such as the latest daily note), call \
-        list_notes with sort='recent' instead of paging through a long list.
+        list_notes with sort='recent' instead of paging through a long list. When the user asks \
+        you to save or capture something, use append_note (to add to an existing note such as \
+        today's daily) or create_note (for a new note), then tell them exactly what you wrote and where.
         """
 
     private var toolSpecs: [[String: Any]] {
@@ -50,7 +52,19 @@ struct VaultAgent {
                               "properties": ["folder": ["type": "string", "description": "Folder path prefix, e.g. 'Dailies/'."],
                                              "sort": ["type": "string", "enum": ["recent", "name"], "description": "Order: 'recent' (default) or 'name'."],
                                              "limit": ["type": "integer", "description": "Max results (default 300, max 1000)."]],
-                              "required": []]]
+                              "required": []]],
+            ["name": "append_note",
+             "description": "Append Markdown text to a note (creates it if missing). Use for quick capture, e.g. adding to today's daily note. Requires the user to have note editing enabled.",
+             "input_schema": ["type": "object",
+                              "properties": ["path": ["type": "string", "description": "Note path, e.g. 'Dailies/2026-11-03.md'."],
+                                             "text": ["type": "string", "description": "Markdown to append."]],
+                              "required": ["path", "text"]]],
+            ["name": "create_note",
+             "description": "Create a new note with Markdown content. Fails if one already exists at that path (use append_note then). Requires the user to have note editing enabled.",
+             "input_schema": ["type": "object",
+                              "properties": ["path": ["type": "string", "description": "New note path, e.g. 'Ideas/App concept.md'."],
+                                             "text": ["type": "string", "description": "Markdown content."]],
+                              "required": ["path", "text"]]]
         ]
     }
 

@@ -24,6 +24,7 @@ final class ChatViewModel: ObservableObject {
         Task {
             do {
                 if vault.isReady {
+                    vault.writingEnabled = settings.allowNoteEditing
                     let agent = VaultAgent(apiKey: settings.apiKey, model: settings.model.rawValue, tools: vault)
                     for try await event in agent.run(history: history) {
                         guard assistantIndex < messages.count else { break }

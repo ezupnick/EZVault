@@ -24,14 +24,19 @@ final class Settings: ObservableObject {
     @Published var model: ClaudeModel {
         didSet { UserDefaults.standard.set(model.rawValue, forKey: Self.modelKey) }
     }
+    @Published var allowNoteEditing: Bool {
+        didSet { UserDefaults.standard.set(allowNoteEditing, forKey: Self.editKey) }
+    }
 
     private static let apiKeyAccount = "anthropic_api_key"
     private static let modelKey = "model"
+    private static let editKey = "allow_note_editing"
 
     init() {
         self.apiKey = KeychainStore.load(for: Self.apiKeyAccount) ?? ""
         let saved = UserDefaults.standard.string(forKey: Self.modelKey) ?? ClaudeModel.opus.rawValue
         self.model = ClaudeModel(rawValue: saved) ?? .opus
+        self.allowNoteEditing = (UserDefaults.standard.object(forKey: Self.editKey) as? Bool) ?? true
     }
 
     var hasKey: Bool { !apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }

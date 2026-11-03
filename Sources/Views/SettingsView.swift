@@ -50,6 +50,12 @@ struct SettingsView: View {
                         ForEach(ClaudeModel.allCases) { Text($0.displayName).tag($0) }
                     }
                 }
+
+                Section {
+                    Toggle("Allow Claude to edit notes", isOn: $settings.allowNoteEditing)
+                } footer: {
+                    Text("Lets Claude append to or create notes when you ask. It never deletes or overwrites existing notes.")
+                }
             }
             .navigationTitle("Settings")
             .navigationBarTitleDisplayMode(.inline)

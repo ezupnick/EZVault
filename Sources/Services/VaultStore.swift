@@ -15,6 +15,9 @@ final class VaultStore: ObservableObject {
     private var vaultURL: URL?
     private let bookmarkKey = "vault_bookmark"
 
+    /// Whether Claude may create/append notes (mirrors the Settings toggle).
+    var writingEnabled = true
+
     /// Ready to answer from notes once a folder is picked and something is indexed.
     var isReady: Bool { vaultURL != nil && indexedCount > 0 }
 
@@ -220,6 +223,12 @@ extension VaultStore: ToolRunner {
             }
             return header + "\n" + listing.paths.joined(separator: "\n")
 
+        case "append_note":
+            return await appendToNote(path: (input["path"] as? String) ?? "", text: (input["text"] as? String) ?? "")
+
+        case "create_note":
+            return await createNote(path: (input["path"] as? String) ?? "", text: (input["text"] as? String) ?? "")
+
         default:
             return "Unknown tool \(name)."
         }
@@ -234,5 +243,74 @@ extension VaultStore: ToolRunner {
     static func citation(title: String, path: String) -> String {
         let encoded = path.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? path
         return "[\(title)](ezvault://note/\(encoded))"
+    }
+
+    // MARK: Writing to the vault (non-destructive: append / create-only)
+
+    func appendToNote(path: String, text: String) async -> String {
+        guard writingEnabled else { return Self.editingDisabled }
+        guard let (url, rel) = resolve(path) else { return "Invalid note path \"\(path)\"." }
+        var ok = false
+        var coordError: NSError?
+        NSFileCoordinator().coordinate(writingItemAt: url, options: [], error: &coordError) { u in
+            let existing = (try? String(contentsOf: u, encoding: .utf8)) ?? ""
+            let addition = text.hasSuffix("\n") ? text : text + "\n"
+            let combined = existing.isEmpty ? addition
+                : existing.trimmingCharacters(in: .newlines) + "\n\n" + addition
+            do {
+                try FileManager.default.createDirectory(at: u.deletingLastPathComponent(), withIntermediateDirectories: true)
+                try combined.write(to: u, atomically: true, encoding: .utf8)
+                ok = true
+            } catch {}
+        }
+        guard ok else { return "Couldn't write to \(rel)." }
+        await indexSingle(url: url, rel: rel)
+        return "Appended to \(rel)."
+    }
+
+    func createNote(path: String, text: String) async -> String {
+        guard writingEnabled else { return Self.editingDisabled }
+        guard let (url, rel) = resolve(path) else { return "Invalid note path \"\(path)\"." }
+        if FileManager.default.fileExists(atPath: url.path) {
+            return "A note already exists at \(rel). Use append_note to add to it instead."
+        }
+        var ok = false
+        var coordError: NSError?
+        NSFileCoordinator().coordinate(writingItemAt: url, options: [], error: &coordError) { u in
+            do {
+                try FileManager.default.createDirectory(at: u.deletingLastPathComponent(), withIntermediateDirectories: true)
+                try text.write(to: u, atomically: true, encoding: .utf8)
+                ok = true
+            } catch {}
+        }
+        guard ok else { return "Couldn't create \(rel)." }
+        await indexSingle(url: url, rel: rel)
+        return "Created \(rel)."
+    }
+
+    private static let editingDisabled =
+        "Note editing is turned off. Ask the user to enable \"Allow Claude to edit notes\" in Settings."
+
+    /// Validates a note path, keeps it inside the vault, and ensures a .md extension.
+    private func resolve(_ path: String) -> (url: URL, rel: String)? {
+        guard let root = vaultURL else { return nil }
+        var rel = path.trimmingCharacters(in: .whitespaces)
+        if rel.hasPrefix("/") { rel.removeFirst() }
+        guard !rel.isEmpty, !rel.contains("..") else { return nil }
+        if (rel as NSString).pathExtension.lowercased() != "md" { rel += ".md" }
+        let url = root.appendingPathComponent(rel)
+        guard url.standardizedFileURL.path.hasPrefix(root.standardizedFileURL.path) else { return nil }
+        return (url, rel)
+    }
+
+    /// Re-index a single note right after it's written, so it's immediately searchable.
+    private func indexSingle(url: URL, rel: String) async {
+        guard let body = Self.readContent(url) else { return }
+        let mtime = (try? url.resourceValues(forKeys: [.contentModificationDateKey])
+            .contentModificationDate)?.timeIntervalSince1970 ?? Date().timeIntervalSince1970
+        let title = Self.noteTitle(rel: rel, body: body)
+        let vec = Embedder.shared.embed(Self.embedText(title: title, body: body))
+        await index.upsert(path: rel, mtime: mtime, title: title, body: body, vec: vec)
+        indexedCount = await index.count()
     }
 }
