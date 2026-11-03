@@ -34,7 +34,7 @@ struct VaultAgent {
     private var toolSpecs: [[String: Any]] {
         [
             ["name": "search_notes",
-             "description": "Full-text search across the user's Obsidian notes. Returns matching titles, paths, and snippets.",
+             "description": "Search the user's Obsidian notes by meaning and keywords (hybrid semantic + full-text). Returns matching titles, a tap-to-open link, path, and a snippet.",
              "input_schema": ["type": "object",
                               "properties": ["query": ["type": "string", "description": "Keywords to search for."],
                                              "limit": ["type": "integer", "description": "Max results (default 8)."]],

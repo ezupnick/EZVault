@@ -100,7 +100,9 @@ final class VaultStore: ObservableObject {
             let mtime = (try? url.resourceValues(forKeys: [.contentModificationDateKey])
                 .contentModificationDate)?.timeIntervalSince1970 ?? 0
             if await index.mtime(forPath: rel) != mtime, let body = readContent(url) {
-                await index.upsert(path: rel, mtime: mtime, title: noteTitle(rel: rel, body: body), body: body)
+                let title = noteTitle(rel: rel, body: body)
+                let vec = Embedder.shared.embed(embedText(title: title, body: body))
+                await index.upsert(path: rel, mtime: mtime, title: title, body: body, vec: vec)
             }
             if i % 50 == 0 { await progress(i, total) }
         }
@@ -138,6 +140,11 @@ final class VaultStore: ObservableObject {
             if t.hasPrefix("# ") { return String(t.dropFirst(2)) }
         }
         return (rel as NSString).lastPathComponent.replacingOccurrences(of: ".md", with: "")
+    }
+
+    /// Text fed to the embedder: the title plus the opening of the note.
+    private nonisolated static func embedText(title: String, body: String) -> String {
+        title + "\n" + String(body.prefix(500))
     }
 
     private nonisolated static func readContent(_ url: URL) -> String? {
@@ -185,7 +192,8 @@ extension VaultStore: ToolRunner {
         case "search_notes":
             let query = (input["query"] as? String) ?? ""
             let limit = max(1, min((input["limit"] as? Int) ?? 8, 20))
-            let hits = await index.search(Self.ftsQuery(query), limit: limit)
+            let qvec = Embedder.shared.embed(query)
+            let hits = await index.hybrid(ftsQuery: Self.ftsQuery(query), queryVector: qvec, limit: limit)
             guard !hits.isEmpty else { return "No notes matched \"\(query)\"." }
             return hits.map {
                 "- \($0.title)\n  link: \(Self.citation(title: $0.title, path: $0.path))\n  path: \($0.path)\n  excerpt: …\($0.snippet)…"
