@@ -16,27 +16,26 @@ struct QuickSwitcherView: View {
         NavigationStack(path: $path) {
             List {
                 if trimmedQuery.isEmpty && !recents.isEmpty {
-                    Section {
+                    Section("Recent searches") {
                         ForEach(recents, id: \.self) { term in
                             Button { query = term } label: {
                                 Label(term, systemImage: "clock.arrow.circlepath")
                                     .foregroundStyle(.primary)
                             }
-                        }
-                        .onDelete { offsets in
-                            offsets.map { recents[$0] }.forEach(RecentSearches.remove)
-                            recents = RecentSearches.all()
-                        }
-                    } header: {
-                        HStack {
-                            Text("Recent searches")
-                            Spacer()
-                            Button("Clear") {
-                                RecentSearches.clear()
-                                recents = []
+                            .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                                Button(role: .destructive) {
+                                    RecentSearches.remove(term)
+                                    recents = RecentSearches.all()
+                                } label: {
+                                    Label("Delete", systemImage: "trash")
+                                }
                             }
-                            .font(.caption)
-                            .textCase(nil)
+                        }
+                        Button(role: .destructive) {
+                            RecentSearches.clear()
+                            recents = []
+                        } label: {
+                            Label("Clear recent searches", systemImage: "trash")
                         }
                     }
                 }
