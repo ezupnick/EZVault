@@ -83,6 +83,7 @@ struct NoteContentView: View {
         .task {
             let path = ref.isWiki ? await vault.resolveWikilink(ref.raw) : ref.raw
             if let path {
+                RecentNotes.add(path)
                 let name = (path as NSString).lastPathComponent.replacingOccurrences(of: ".md", with: "")
                 resolvedTitle = name
                 content = await vault.noteBody(path)
