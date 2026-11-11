@@ -80,11 +80,61 @@ struct ChatView: View {
                 }
                 .padding()
             }
+            .overlay {
+                if vm.messages.isEmpty && vm.errorText == nil { greeting }
+            }
             .onChange(of: vm.messages.last?.text) { _, _ in
                 if let last = vm.messages.last {
                     withAnimation { proxy.scrollTo(last.id, anchor: .bottom) }
                 }
             }
+        }
+    }
+
+    /// Shown while the conversation is empty; refreshes each minute so it rolls over at the boundaries.
+    private var greeting: some View {
+        VStack(spacing: 28) {
+            TimelineView(.everyMinute) { context in
+                VStack(spacing: 6) {
+                    Text(Self.greetingText(for: context.date))
+                        .font(.largeTitle.weight(.semibold))
+                    Text("What are you looking for?")
+                        .font(.title3)
+                        .foregroundStyle(.secondary)
+                }
+                .multilineTextAlignment(.center)
+            }
+            .allowsHitTesting(false)
+
+            if vault.isReady {
+                HStack(spacing: 12) {
+                    quickAction("Search notes", systemImage: "magnifyingglass") { showSwitcher = true }
+                    quickAction("Quick capture", systemImage: "square.and.pencil") { showCapture = true }
+                }
+            }
+        }
+        .padding(.horizontal, 32)
+    }
+
+    private func quickAction(_ title: String, systemImage: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            VStack(spacing: 8) {
+                Image(systemName: systemImage).font(.title2)
+                Text(title).font(.subheadline.weight(.medium))
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 18)
+            .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        }
+        .buttonStyle(.plain)
+    }
+
+    private static func greetingText(for date: Date) -> String {
+        switch Calendar.current.component(.hour, from: date) {
+        case 5..<12:  return "Good morning"
+        case 12..<17: return "Good afternoon"
+        case 17..<22: return "Good evening"
+        default:      return "Hello, night owl"
         }
     }
 
