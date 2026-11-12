@@ -19,7 +19,7 @@ targets:
       - path: Sources
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.elizup.VaultChat
+        PRODUCT_BUNDLE_IDENTIFIER: $(BUNDLE_ID_PREFIX).VaultChat
         GENERATE_INFOPLIST_FILE: YES
         TARGETED_DEVICE_FAMILY: "1"
         INFOPLIST_KEY_CFBundleDisplayName: VaultChat

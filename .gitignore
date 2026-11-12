@@ -9,6 +9,9 @@ xcuserdata/
 *.xcscmblueprint
 *.xccheckout
 
+# Personal signing settings (see Config/Local.xcconfig.example)
+Config/Local.xcconfig
+
 # Swift Package Manager
 .build/
 .swiftpm/

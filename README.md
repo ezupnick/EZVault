@@ -98,8 +98,14 @@ xcodebuild -project VaultChat.xcodeproj -scheme VaultChat \
 
 ## Running on your iPhone
 
-1. Open `VaultChat.xcodeproj`, select the **VaultChat** target → **Signing & Capabilities**,
-   check *Automatically manage signing*, and choose your Apple ID team (a free one works).
+1. Set your signing team and bundle-ID prefix in a local, git-ignored config file:
+   ```bash
+   cp Config/Local.xcconfig.example Config/Local.xcconfig
+   ```
+   Then edit `Config/Local.xcconfig`: `DEVELOPMENT_TEAM` is your Apple Developer Team ID
+   (a free Apple ID team works), `BUNDLE_ID_PREFIX` something like `com.yourname`.
+   Don't pick the team in Xcode's *Signing & Capabilities* tab — that writes it into the
+   shared project file.
 2. Plug in your iPhone (unlocked), select it as the run destination, press **⌘R**.
 3. On the phone: **Settings → General → VPN & Device Management** → trust the developer app.
 

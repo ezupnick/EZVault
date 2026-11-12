@@ -1,0 +1,8 @@
+// Signing defaults for the VaultChat target.
+// Your own team and bundle-ID prefix go in Config/Local.xcconfig, which is git-ignored.
+// To set it up: cp Config/Local.xcconfig.example Config/Local.xcconfig, then edit it.
+
+DEVELOPMENT_TEAM =
+BUNDLE_ID_PREFIX = com.example
+
+#include? "Local.xcconfig"

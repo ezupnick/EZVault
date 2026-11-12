@@ -1,0 +1,7 @@
+// Copy to Config/Local.xcconfig (git-ignored) and fill in your own values.
+
+// Your 10-character Apple Developer Team ID (developer.apple.com/account → Membership details).
+DEVELOPMENT_TEAM = ABCDE12345
+
+// Reverse-DNS prefix for the bundle ID; the app becomes <prefix>.VaultChat.
+BUNDLE_ID_PREFIX = com.yourname
