@@ -6,6 +6,13 @@ struct VaultChatApp: App {
     @StateObject private var vault = VaultStore()
     @Environment(\.scenePhase) private var scenePhase
 
+    init() {
+        // Recent searches / recently opened notes were removed; drop any history older builds saved.
+        for key in ["recent_searches", "recent_notes"] {
+            UserDefaults.standard.removeObject(forKey: key)
+        }
+    }
+
     var body: some Scene {
         WindowGroup {
             ChatView()
